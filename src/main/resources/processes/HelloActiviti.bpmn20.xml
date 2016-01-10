@@ -3,7 +3,9 @@
   <process id="helloActivitiProcess" name="My process" isExecutable="true">
     <startEvent id="startevent1" name="Start"></startEvent>
     <endEvent id="endevent1" name="End"></endEvent>
-    <userTask id="usertask1" name="User Task" activiti:assignee="bob"></userTask>
+    <userTask id="usertask1" name="User Task" activiti:assignee="bob">
+      <documentation>test</documentation>
+    </userTask>
     <sequenceFlow id="flow1" sourceRef="startevent1" targetRef="usertask1"></sequenceFlow>
     <sequenceFlow id="flow2" sourceRef="usertask1" targetRef="endevent1"></sequenceFlow>
   </process>
