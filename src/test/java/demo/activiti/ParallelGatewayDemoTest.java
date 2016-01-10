@@ -27,7 +27,7 @@ public class ParallelGatewayDemoTest extends BaseTest {
 	private TaskService taskService;
 
 	@Test
-	public void testIt() {
+	public void testIt() throws InterruptedException {
 		Map<String, Object> variables = new HashMap<>();
 		variables.put("needToBuy", "book");
 
@@ -50,5 +50,11 @@ public class ParallelGatewayDemoTest extends BaseTest {
 		for (Task task : tasksForBob) {
 			taskService.complete(task.getId());
 		}
+
+		// Thread.sleep(1000);
+
+		processInstance = runtimeService.createProcessInstanceQuery().processInstanceId(processInstance.getId())
+				.singleResult();
+		Assert.assertNull(processInstance);
 	}
 }
