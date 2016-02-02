@@ -26,7 +26,7 @@ public class ActivitiDemoApplication {
 	CommandLineRunner init(final RepositoryService repositoryService, final RuntimeService runtimeService,
 			final TaskService taskService) {
 		logger.info("init commandlinerunner.");
-		
+
 		return new CommandLineRunner() {
 
 			public void run(String... strings) throws Exception {
@@ -48,16 +48,18 @@ public class ActivitiDemoApplication {
 
 		return new InitializingBean() {
 			public void afterPropertiesSet() throws Exception {
+				if (identityService.createGroupQuery().groupId("user").list().size() == 0) {
+					Group group = identityService.newGroup("user");
+					group.setName("users");
+					group.setType("security-role");
+					identityService.saveGroup(group);
+				}
 
-				Group group = identityService.newGroup("user");
-				group.setName("users");
-				group.setType("security-role");
-				identityService.saveGroup(group);
-
-				User admin = identityService.newUser("admin");
-				admin.setPassword("admin");
-				identityService.saveUser(admin);
-				
+				if (identityService.createUserQuery().userId("admin").list().size() == 0) {
+					User admin = identityService.newUser("admin");
+					admin.setPassword("admin");
+					identityService.saveUser(admin);
+				}
 				logger.info("group & user added.");
 			}
 		};
