@@ -54,4 +54,4 @@ crashlytics-build.properties
 /.settings/
 /.xml/
 /.mvn/
-
+classes/
