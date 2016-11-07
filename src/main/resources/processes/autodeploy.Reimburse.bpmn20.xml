@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:activiti="http://activiti.org/bpmn" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" xmlns:tns="http://activiti.org/bpmn20" typeLanguage="http://www.w3.org/2001/XMLSchema" expressionLanguage="http://www.w3.org/1999/XPath" targetNamespace="http://activiti.org/bpmn20" id="definitions" name="">
+    <process id="reimburse_general" name="Reimburse Approval Process" isExecutable="true" isClosed="false" processType="None">
+        <startEvent id="start" activiti:initiator="submitUserCode">
+            <extensionElements>
+                <activiti:executionListener event="start" expression="${execution.setVariable('rejected', false)}"></activiti:executionListener>
+                <activiti:executionListener event="start" expression="${execution.setVariable('formTypeId', 'REIMBURSE')}"></activiti:executionListener>
+                <activiti:executionListener event="start" expression="${execution.setVariable('_ACTIVITI_SKIP_EXPRESSION_ENABLED', true)}"></activiti:executionListener>
+                <activiti:executionListener event="start" expression="${execution.setVariable('approved', true)}"></activiti:executionListener>
+            </extensionElements>
+        </startEvent>
+        <sequenceFlow id="toCover" sourceRef="start" targetRef="subprocess1"></sequenceFlow>
+        <userTask id="financeAudit" name="财务审核" activiti:candidateGroups="${'FINANCE_L'.concat(auditLevel)}" activiti:category="FINANCE_AUDIT">
+            <extensionElements>
+                <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, 'AUDITING')}"></activiti:taskListener>
+                <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, reimburseDataCode, 'AUDIT_START', task)}"></activiti:taskListener>
+                <activiti:taskListener event="complete" expression="${execution.setVariable('auditLevel', execution.getVariable('auditLevel') + 1)}"></activiti:taskListener>
+            </extensionElements>
+            <multiInstanceLoopCharacteristics isSequential="true">
+                <loopCardinality>999</loopCardinality>
+                <completionCondition>${!audited || !processService.hasAuditLevel(entCode, auditLevel, formTypeId, reimburseDataCode)}</completionCondition>
+            </multiInstanceLoopCharacteristics>
+        </userTask>
+        <sequenceFlow id="toAuditDecision" sourceRef="financeAudit" targetRef="auditDecision"></sequenceFlow>
+        <exclusiveGateway id="auditDecision" name="Request audited?"></exclusiveGateway>
+        <sequenceFlow id="auditApproved" name="批准" sourceRef="auditDecision" targetRef="AfterFinanceAuditSubProcess">
+            <extensionElements>
+                <activiti:executionListener event="take" expression="${processService.assembleAllocations(entCode, formTypeId, reimburseDataCode, execution)}"></activiti:executionListener>
+            </extensionElements>
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${audited == 'true'}]]></conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="auditRejected" name="驳回" sourceRef="auditDecision" targetRef="theEnd">
+            <extensionElements>
+                <activiti:executionListener event="take" expression="${execution.setVariable('rejected', true)}"></activiti:executionListener>
+            </extensionElements>
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${audited == 'false'}]]></conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="afterAuditApproved" name="批准" sourceRef="AfterFinanceAuditSubProcess" targetRef="cashierSettle">
+            <extensionElements>
+                <activiti:executionListener event="take" expression="${processService.recordApprovedDate(entCode, formTypeId, reimburseDataCode)}"></activiti:executionListener>
+            </extensionElements>
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'true'}]]></conditionExpression>
+        </sequenceFlow>
+        <userTask id="cashierSettle" name="出纳结算" activiti:candidateGroups="CASHIER" activiti:category="CASHIER_SETTLE">
+            <extensionElements>
+                <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, 'SETTLEMENT')}"></activiti:taskListener>
+                <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, reimburseDataCode, 'SETTLE_START', task)}"></activiti:taskListener>
+            </extensionElements>
+        </userTask>
+        <sequenceFlow id="toEnd" name="完成" sourceRef="cashierSettle" targetRef="theEnd"></sequenceFlow>
+        <endEvent id="theEnd">
+            <extensionElements>
+                <activiti:executionListener event="end" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, rejected? 'REJECTED':'COMPLETED')}"></activiti:executionListener>
+                <activiti:executionListener event="end" expression="${rejected? '': processService.recordCompletedDate(entCode, formTypeId, reimburseDataCode)}"></activiti:executionListener>
+            </extensionElements>
+        </endEvent>
+        <subProcess id="subprocess1" name="承担人审批子流程">
+            <multiInstanceLoopCharacteristics isSequential="false" activiti:collection="allocations" activiti:elementVariable="allocation"></multiInstanceLoopCharacteristics>
+            <startEvent id="startevent1" name="Start"></startEvent>
+            <sequenceFlow id="flow8" sourceRef="startevent1" targetRef="coverUserApproval"></sequenceFlow>
+            <userTask id="coverUserApproval" name="承担人审批" activiti:assignee="${allocation.coverUserCode}" activiti:category="APPROVAL" activiti:skipExpression="${requestUserCode == allocation.coverUserCode}">
+                <extensionElements>
+                    <activiti:taskListener event="create" expression="${task.setVariableLocal('allocationCode', allocation.allocationCode)}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, 'APPROVING')}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${requestUserCode == allocation.coverUserCode ? null : processService.recordProcessLog(entCode, formTypeId, reimburseDataCode, 'APPROVAL_START', task)}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${requestUserCode == allocation.coverUserCode ? null : processService.sendMessage(entCode, formTypeId, reimburseDataCode, 'APPROVAL', task)}"></activiti:taskListener>
+                </extensionElements>
+            </userTask>
+            <userTask id="managerApproval" name="领导审批" activiti:candidateUsers="${processService.getNextApproverUserCodes(entCode, allocation.departmentCode, allocation.coverUserCode, allocation.currentApprover, allocation.amount, false)}" activiti:category="APPROVAL" activiti:skipExpression="${!processService.hasNextApprovers(entCode, allocation.departmentCode, allocation.coverUserCode, allocation.currentApprover, allocation.amount, false)}">
+                <extensionElements>
+                    <activiti:taskListener event="create" expression="${task.setVariableLocal('allocationCode', allocation.allocationCode)}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, 'APPROVING')}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, reimburseDataCode, 'APPROVAL_START', task)}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${processService.sendMessage(entCode, formTypeId, reimburseDataCode, 'APPROVAL', task)}"></activiti:taskListener>
+                </extensionElements>
+                <multiInstanceLoopCharacteristics isSequential="true">
+                    <loopCardinality>50</loopCardinality>
+                    <completionCondition>${ !approved ||
+                !processService.hasNextApprovers(entCode, allocation.departmentCode, allocation.coverUserCode, allocation.currentApprover, allocation.amount, false) }</completionCondition>
+                </multiInstanceLoopCharacteristics>
+            </userTask>
+            <endEvent id="endevent1" name="End"></endEvent>
+            <endEvent id="terminateendevent1" name="驳回">
+                <extensionElements>
+                    <activiti:executionListener event="start" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, 'REJECTED')}"></activiti:executionListener>
+                </extensionElements>
+                <terminateEventDefinition activiti:terminateAll="true"></terminateEventDefinition>
+            </endEvent>
+            <exclusiveGateway id="exclusivegateway1" name="Exclusive Gateway"></exclusiveGateway>
+            <sequenceFlow id="flow3" sourceRef="managerApproval" targetRef="exclusivegateway1"></sequenceFlow>
+            <sequenceFlow id="flow4" name="驳回" sourceRef="exclusivegateway1" targetRef="terminateendevent1">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'false'}]]></conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="flow5" name="通过" sourceRef="exclusivegateway1" targetRef="endevent1">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'true'}]]></conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="flow9" sourceRef="coverUserApproval" targetRef="exclusivegateway2"></sequenceFlow>
+            <exclusiveGateway id="exclusivegateway2" name="Exclusive Gateway"></exclusiveGateway>
+            <sequenceFlow id="flow10" name="驳回" sourceRef="exclusivegateway2" targetRef="terminateendevent1">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'false'}]]></conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="flow11" name="通过" sourceRef="exclusivegateway2" targetRef="managerApproval">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'true'}]]></conditionExpression>
+            </sequenceFlow>
+        </subProcess>
+        <sequenceFlow id="flow12" sourceRef="subprocess1" targetRef="financeAudit">
+            <extensionElements>
+                <activiti:executionListener event="take" expression="${execution.setVariable('auditLevel', 1)}"></activiti:executionListener>
+            </extensionElements>
+        </sequenceFlow>
+        <subProcess id="AfterFinanceAuditSubProcess" name="财务后审批子流程">
+            <multiInstanceLoopCharacteristics isSequential="false" activiti:collection="allocations" activiti:elementVariable="allocation"></multiInstanceLoopCharacteristics>
+            <userTask id="afterAuditApproval" name="财务后审批" activiti:candidateUsers="${processService.getNextApproverUserCodes(entCode, allocation.departmentCode, allocation.coverUserCode, allocation.currentApprover, allocation.amount, true)}" activiti:category="APPROVAL"
+                      activiti:skipExpression="${!processService.hasNextApprovers(entCode, allocation.departmentCode, allocation.coverUserCode, allocation.currentApprover, allocation.amount, true)}">
+                <extensionElements>
+                    <activiti:taskListener event="create" expression="${task.setVariableLocal('allocationCode', allocation.allocationCode)}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, 'APPROVING')}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, reimburseDataCode, 'APPROVAL_START', task)}"></activiti:taskListener>
+                    <activiti:taskListener event="create" expression="${processService.sendMessage(entCode, formTypeId, reimburseDataCode, 'APPROVAL', task)}"></activiti:taskListener>
+                </extensionElements>
+                <multiInstanceLoopCharacteristics isSequential="true">
+                    <loopCardinality>50</loopCardinality>
+                    <completionCondition>${!approved ||
+                !processService.hasNextApprovers(entCode, allocation.departmentCode, allocation.coverUserCode, allocation.currentApprover, allocation.amount, true)}</completionCondition>
+                </multiInstanceLoopCharacteristics>
+            </userTask>
+            <startEvent id="startevent2" name="Start"></startEvent>
+            <sequenceFlow id="flow13" sourceRef="startevent2" targetRef="afterAuditApproval"></sequenceFlow>
+            <endEvent id="endevent2" name="End"></endEvent>
+            <endEvent id="terminateendevent2" name="驳回">
+                <extensionElements>
+                    <activiti:executionListener event="start" expression="${processService.updateStatus(entCode, formTypeId, reimburseDataCode, 'REJECTED')}"></activiti:executionListener>
+                </extensionElements>
+                <terminateEventDefinition activiti:terminateAll="true"></terminateEventDefinition>
+            </endEvent>
+            <exclusiveGateway id="exclusivegateway3" name="Exclusive Gateway"></exclusiveGateway>
+            <sequenceFlow id="flow14" sourceRef="afterAuditApproval" targetRef="exclusivegateway3"></sequenceFlow>
+            <sequenceFlow id="flow15" name="驳回" sourceRef="exclusivegateway3" targetRef="terminateendevent2">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'false'}]]></conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="flow16" name="通过" sourceRef="exclusivegateway3" targetRef="endevent2">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'true'}]]></conditionExpression>
+            </sequenceFlow>
+        </subProcess>
+    </process>
+    <bpmndi:BPMNDiagram id="BPMNDiagram_reimburse_general">
+        <bpmndi:BPMNPlane bpmnElement="reimburse_general" id="BPMNPlane_reimburse_general">
+            <bpmndi:BPMNShape bpmnElement="start" id="BPMNShape_start">
+                <omgdc:Bounds height="35.0" width="35.0" x="10.0" y="92.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="financeAudit" id="BPMNShape_financeAudit">
+                <omgdc:Bounds height="60.0" width="100.0" x="406.0" y="280.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="auditDecision" id="BPMNShape_auditDecision">
+                <omgdc:Bounds height="40.0" width="40.0" x="435.0" y="364.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="cashierSettle" id="BPMNShape_cashierSettle">
+                <omgdc:Bounds height="60.0" width="100.0" x="406.0" y="700.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="theEnd" id="BPMNShape_theEnd">
+                <omgdc:Bounds height="35.0" width="35.0" x="800.0" y="510.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="subprocess1" id="BPMNShape_subprocess1">
+                <omgdc:Bounds height="205.0" width="651.0" x="130.0" y="0.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="startevent1" id="BPMNShape_startevent1">
+                <omgdc:Bounds height="35.0" width="35.0" x="170.0" y="83.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="coverUserApproval" id="BPMNShape_coverUserApproval">
+                <omgdc:Bounds height="55.0" width="105.0" x="250.0" y="73.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="managerApproval" id="BPMNShape_managerApproval">
+                <omgdc:Bounds height="60.0" width="100.0" x="480.0" y="71.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="endevent1" id="BPMNShape_endevent1">
+                <omgdc:Bounds height="35.0" width="35.0" x="700.0" y="126.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="terminateendevent1" id="BPMNShape_terminateendevent1">
+                <omgdc:Bounds height="35.0" width="35.0" x="690.0" y="20.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusivegateway1" id="BPMNShape_exclusivegateway1">
+                <omgdc:Bounds height="40.0" width="40.0" x="620.0" y="80.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusivegateway2" id="BPMNShape_exclusivegateway2">
+                <omgdc:Bounds height="40.0" width="40.0" x="380.0" y="80.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="AfterFinanceAuditSubProcess" id="BPMNShape_AfterFinanceAuditSubProcess">
+                <omgdc:Bounds height="205.0" width="421.0" x="245.0" y="445.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="afterAuditApproval" id="BPMNShape_afterAuditApproval">
+                <omgdc:Bounds height="60.0" width="100.0" x="360.0" y="510.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="startevent2" id="BPMNShape_startevent2">
+                <omgdc:Bounds height="35.0" width="35.0" x="270.0" y="522.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="endevent2" id="BPMNShape_endevent2">
+                <omgdc:Bounds height="35.0" width="35.0" x="590.0" y="580.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="terminateendevent2" id="BPMNShape_terminateendevent2">
+                <omgdc:Bounds height="35.0" width="35.0" x="590.0" y="476.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusivegateway3" id="BPMNShape_exclusivegateway3">
+                <omgdc:Bounds height="40.0" width="40.0" x="520.0" y="519.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNEdge bpmnElement="toCover" id="BPMNEdge_toCover">
+                <omgdi:waypoint x="45.0" y="109.0"></omgdi:waypoint>
+                <omgdi:waypoint x="130.0" y="102.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="toAuditDecision" id="BPMNEdge_toAuditDecision">
+                <omgdi:waypoint x="456.0" y="340.0"></omgdi:waypoint>
+                <omgdi:waypoint x="455.0" y="364.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="auditApproved" id="BPMNEdge_auditApproved">
+                <omgdi:waypoint x="455.0" y="404.0"></omgdi:waypoint>
+                <omgdi:waypoint x="455.0" y="445.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="100.0" x="455.0" y="414.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="auditRejected" id="BPMNEdge_auditRejected">
+                <omgdi:waypoint x="475.0" y="384.0"></omgdi:waypoint>
+                <omgdi:waypoint x="647.0" y="383.0"></omgdi:waypoint>
+                <omgdi:waypoint x="817.0" y="383.0"></omgdi:waypoint>
+                <omgdi:waypoint x="817.0" y="510.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="618.0" y="365.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="afterAuditApproved" id="BPMNEdge_afterAuditApproved">
+                <omgdi:waypoint x="455.0" y="650.0"></omgdi:waypoint>
+                <omgdi:waypoint x="456.0" y="700.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="454.0" y="665.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="toEnd" id="BPMNEdge_toEnd">
+                <omgdi:waypoint x="506.0" y="730.0"></omgdi:waypoint>
+                <omgdi:waypoint x="817.0" y="729.0"></omgdi:waypoint>
+                <omgdi:waypoint x="817.0" y="545.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="506.0" y="730.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow8" id="BPMNEdge_flow8">
+                <omgdi:waypoint x="205.0" y="100.0"></omgdi:waypoint>
+                <omgdi:waypoint x="250.0" y="100.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow3" id="BPMNEdge_flow3">
+                <omgdi:waypoint x="580.0" y="101.0"></omgdi:waypoint>
+                <omgdi:waypoint x="620.0" y="100.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow4" id="BPMNEdge_flow4">
+                <omgdi:waypoint x="640.0" y="80.0"></omgdi:waypoint>
+                <omgdi:waypoint x="639.0" y="37.0"></omgdi:waypoint>
+                <omgdi:waypoint x="690.0" y="37.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="620.0" y="48.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow5" id="BPMNEdge_flow5">
+                <omgdi:waypoint x="640.0" y="120.0"></omgdi:waypoint>
+                <omgdi:waypoint x="639.0" y="143.0"></omgdi:waypoint>
+                <omgdi:waypoint x="700.0" y="143.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="628.0" y="132.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow9" id="BPMNEdge_flow9">
+                <omgdi:waypoint x="355.0" y="100.0"></omgdi:waypoint>
+                <omgdi:waypoint x="380.0" y="100.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow10" id="BPMNEdge_flow10">
+                <omgdi:waypoint x="400.0" y="80.0"></omgdi:waypoint>
+                <omgdi:waypoint x="400.0" y="37.0"></omgdi:waypoint>
+                <omgdi:waypoint x="690.0" y="37.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="390.0" y="29.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow11" id="BPMNEdge_flow11">
+                <omgdi:waypoint x="420.0" y="100.0"></omgdi:waypoint>
+                <omgdi:waypoint x="480.0" y="101.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="420.0" y="100.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow12" id="BPMNEdge_flow12">
+                <omgdi:waypoint x="455.0" y="205.0"></omgdi:waypoint>
+                <omgdi:waypoint x="456.0" y="280.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow13" id="BPMNEdge_flow13">
+                <omgdi:waypoint x="305.0" y="539.0"></omgdi:waypoint>
+                <omgdi:waypoint x="360.0" y="540.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow14" id="BPMNEdge_flow14">
+                <omgdi:waypoint x="460.0" y="540.0"></omgdi:waypoint>
+                <omgdi:waypoint x="520.0" y="539.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow15" id="BPMNEdge_flow15">
+                <omgdi:waypoint x="540.0" y="519.0"></omgdi:waypoint>
+                <omgdi:waypoint x="540.0" y="493.0"></omgdi:waypoint>
+                <omgdi:waypoint x="590.0" y="493.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="22.0" x="528.0" y="436.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow16" id="BPMNEdge_flow16">
+                <omgdi:waypoint x="540.0" y="559.0"></omgdi:waypoint>
+                <omgdi:waypoint x="540.0" y="597.0"></omgdi:waypoint>
+                <omgdi:waypoint x="590.0" y="597.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="16.0" width="100.0" x="541.0" y="580.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+        </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
+</definitions>
