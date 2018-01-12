@@ -44,6 +44,23 @@ public class HelloActivitiTest {
 		Assert.assertEquals("User Task", task.getName());
 
 		taskService.complete(task.getId());
+		System.out.println(runtimeService.getVariable(task.getExecutionId(), "message"));
+
+		// First, the 'phone interview' should be active
+		task = taskService.createTaskQuery().processInstanceId(processInstance.getId()).taskAssignee("jim")
+				.singleResult();
+
+		taskService.complete(task.getId());
+
+		System.out.println(runtimeService.getVariable(task.getExecutionId(), "message"));
+
+		// runtimeService.setVariable("", "", "");
+
+		// First, the 'phone interview' should be active
+		task = taskService.createTaskQuery().processInstanceId(processInstance.getId()).taskAssignee("jerry")
+				.singleResult();
+
+		taskService.complete(task.getId());
 
 		List<Task> tasks = taskService.createTaskQuery().processInstanceId(processInstance.getId()).orderByTaskName()
 				.asc().list();

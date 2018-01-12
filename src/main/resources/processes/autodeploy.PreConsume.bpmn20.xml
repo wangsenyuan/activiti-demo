@@ -1,264 +1,215 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:activiti="http://activiti.org/bpmn" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" xmlns:tns="http://activiti.org/bpmn20" typeLanguage="http://www.w3.org/2001/XMLSchema" expressionLanguage="http://www.w3.org/1999/XPath" targetNamespace="http://activiti.org/bpmn20" id="definitions" name="">
-  <process id="pre_consume_general" name="Pre Consume Approval Process" isExecutable="true" isClosed="false" processType="None">
-    <startEvent id="start" activiti:initiator="submitUserCode">
-      <extensionElements>
-        <activiti:executionListener event="start" expression="${execution.setVariable('rejected', false)}"></activiti:executionListener>
-        <activiti:executionListener event="start" expression="${execution.setVariable('_ACTIVITI_SKIP_EXPRESSION_ENABLED', true)}"></activiti:executionListener>
-        <activiti:executionListener event="start" expression="${execution.setVariable('approved', true)}"></activiti:executionListener>
-
-      </extensionElements>
-    </startEvent>
-    <sequenceFlow id="toCover" sourceRef="start" targetRef="managerApproval"></sequenceFlow>
-    <userTask id="managerApproval" name="领导审批" activiti:candidateUsers="${processService.getNextApproverUserCodes(entCode, costCenterCode, requestUserCode, currentApprover, preConsumeAmount, false)}"
-              activiti:category="APPROVAL" activiti:skipExpression="${!processService.hasNextApprovers(entCode, costCenterCode, requestUserCode, currentApprover, preConsumeAmount, false)}">
-      <extensionElements>
-        <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'SUBMITTED')}"></activiti:taskListener>
-        <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'APPROVAL_START', task)}"/>
-      </extensionElements>
-      <multiInstanceLoopCharacteristics isSequential="true">
-        <loopCardinality>50</loopCardinality>
-        <completionCondition>${ !approved ||
-                !processService.hasNextApprovers(entCode, costCenterCode, requestUserCode, currentApprover, preConsumeAmount, false) }</completionCondition>
-      </multiInstanceLoopCharacteristics>
-    </userTask>
-    <sequenceFlow id="toManagerDecision" sourceRef="managerApproval" targetRef="managerDecision"></sequenceFlow>
-    <exclusiveGateway id="managerDecision" name="Request approved?"></exclusiveGateway>
-    <sequenceFlow id="managerApproved" name="批准" sourceRef="managerDecision" targetRef="shouldSkip">
-      <extensionElements>
-        <activiti:executionListener event="take" expression="${execution.setVariable('auditLevel', 1)}"></activiti:executionListener>
-      </extensionElements>
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'true'}]]></conditionExpression>
-    </sequenceFlow>
-    <sequenceFlow id="managerRejected" name="驳回" sourceRef="managerDecision" targetRef="theEnd">
-      <extensionElements>
-        <activiti:executionListener event="take" expression="${execution.setVariable('rejected', true)}"></activiti:executionListener>
-      </extensionElements>
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'false'}]]></conditionExpression>
-    </sequenceFlow>
-    <userTask id="financeAudit" name="财务审核" activiti:candidateGroups="${'FINANCE_L'.concat(auditLevel)}" activiti:category="FINANCE_AUDIT">
-      <extensionElements>
-        <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'AUDITING')}"></activiti:taskListener>
-        <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'AUDIT_START', task, 'Level '.concat(auditLevel))}"/>
-        <activiti:taskListener event="complete" expression="${execution.setVariable('auditLevel', execution.getVariable('auditLevel') + 1)}"></activiti:taskListener>
-      </extensionElements>
-      <multiInstanceLoopCharacteristics isSequential="true">
-        <loopCardinality>999</loopCardinality>
-        <completionCondition>${!audited || !processService.hasAuditLevel(entCode, auditLevel)}</completionCondition>
-      </multiInstanceLoopCharacteristics>
-    </userTask>
-    <sequenceFlow id="toAuditDecision" sourceRef="financeAudit" targetRef="auditDecision"></sequenceFlow>
-    <exclusiveGateway id="auditDecision" name="Request audited?"></exclusiveGateway>
-    <sequenceFlow id="auditApproved" name="批准" sourceRef="auditDecision" targetRef="afterAuditApproval">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${audited == 'true'}]]></conditionExpression>
-    </sequenceFlow>
-    <sequenceFlow id="auditRejected" name="驳回" sourceRef="auditDecision" targetRef="theEnd">
-      <extensionElements>
-        <activiti:executionListener event="take" expression="${execution.setVariable('rejected', true)}"></activiti:executionListener>
-      </extensionElements>
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${audited == 'false'}]]></conditionExpression>
-    </sequenceFlow>
-    <userTask id="afterAuditApproval" name="财务后审批" activiti:candidateUsers="${processService.getNextApproverUserCodes(entCode, costCenterCode, requestUserCode, currentApprover, preConsumeAmount, true)}"
-              activiti:category="APPROVAL" activiti:skipExpression="${!processService.hasNextApprovers(entCode, costCenterCode, requestUserCode, currentApprover, preConsumeAmount, true)}">
-      <extensionElements>
-        <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'SUBMITTED')}"></activiti:taskListener>
-        <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'APPROVAL_START', task)}"/>
-      </extensionElements>
-      <multiInstanceLoopCharacteristics isSequential="true">
-        <loopCardinality>50</loopCardinality>
-        <completionCondition>${!approved ||
-                !processService.hasNextApprovers(entCode, costCenterCode, requestUserCode, currentApprover, preConsumeAmount, true)}</completionCondition>
-      </multiInstanceLoopCharacteristics>
-    </userTask>
-    <sequenceFlow id="toAfterAuditDecision" sourceRef="afterAuditApproval" targetRef="afterAuditDecision"></sequenceFlow>
-    <exclusiveGateway id="afterAuditDecision" name="Request approved?"></exclusiveGateway>
-    <sequenceFlow id="afterAuditApproved" name="批准" sourceRef="afterAuditDecision" targetRef="needSettleDecision">
-      <extensionElements>
-        <activiti:executionListener event="take" expression="${processService.recordApprovedDate(entCode, formTypeId, preConsumeDataCode)}"></activiti:executionListener>
-      </extensionElements>
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'true'}]]></conditionExpression>
-    </sequenceFlow>
-    <sequenceFlow id="afterAuditRejected" name="驳回" sourceRef="afterAuditDecision" targetRef="theEnd">
-      <extensionElements>
-        <activiti:executionListener event="take" expression="${execution.setVariable('rejected', true)}"></activiti:executionListener>
-      </extensionElements>
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == 'false'}]]></conditionExpression>
-    </sequenceFlow>
-    <userTask id="cashierSettle" name="出纳结算" activiti:candidateGroups="CASHIER" activiti:category="CASHIER_SETTLE">
-      <extensionElements>
-        <activiti:taskListener event="create" expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'PAY_PENDING')}"></activiti:taskListener>
-        <activiti:taskListener event="create" expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'SETTLE_START', task)}"/>
-      </extensionElements>
-    </userTask>
-    <sequenceFlow id="toEnd" sourceRef="cashierSettle" targetRef="theEnd"></sequenceFlow>
-    <endEvent id="theEnd">
-      <extensionElements>
-        <activiti:executionListener event="end" expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, rejected? 'REJECTED':'PAID')}"></activiti:executionListener>
-        <activiti:executionListener event="end" expression="${rejected? '': processService.recordCompletedDate(entCode, formTypeId, preConsumeDataCode)}"></activiti:executionListener>
-      </extensionElements>
-    </endEvent>
-    <exclusiveGateway id="shouldSkip" name="Exclusive Gateway"></exclusiveGateway>
-    <sequenceFlow id="hasLoan" name="有借款" sourceRef="shouldSkip" targetRef="financeAudit">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount > 0}]]></conditionExpression>
-    </sequenceFlow>
-    <sequenceFlow id="noLoanToAfterAudit" name="无借款" sourceRef="shouldSkip" targetRef="afterAuditApproval">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount==0}]]></conditionExpression>
-    </sequenceFlow>
-    <exclusiveGateway id="needSettleDecision" name="Exclusive Gateway"></exclusiveGateway>
-    <sequenceFlow id="noLoadToEnd" name="无借款" sourceRef="needSettleDecision" targetRef="theEnd">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount==0}]]></conditionExpression>
-    </sequenceFlow>
-    <sequenceFlow id="hasLoanToSettle" name="有借款" sourceRef="needSettleDecision" targetRef="cashierSettle">
-      <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount > 0}]]></conditionExpression>
-    </sequenceFlow>
-  </process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_pre_consume_general">
-    <bpmndi:BPMNPlane bpmnElement="pre_consume_general" id="BPMNPlane_pre_consume_general">
-      <bpmndi:BPMNShape bpmnElement="start" id="BPMNShape_start">
-        <omgdc:Bounds height="35.0" width="35.0" x="0.0" y="149.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="managerApproval" id="BPMNShape_managerApproval">
-        <omgdc:Bounds height="60.0" width="100.0" x="82.0" y="137.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="managerDecision" id="BPMNShape_managerDecision">
-        <omgdc:Bounds height="40.0" width="40.0" x="230.0" y="146.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="financeAudit" id="BPMNShape_financeAudit">
-        <omgdc:Bounds height="60.0" width="100.0" x="320.0" y="200.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="auditDecision" id="BPMNShape_auditDecision">
-        <omgdc:Bounds height="40.0" width="40.0" x="460.0" y="209.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="afterAuditApproval" id="BPMNShape_afterAuditApproval">
-        <omgdc:Bounds height="60.0" width="100.0" x="561.0" y="261.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="afterAuditDecision" id="BPMNShape_afterAuditDecision">
-        <omgdc:Bounds height="40.0" width="40.0" x="710.0" y="270.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="cashierSettle" id="BPMNShape_cashierSettle">
-        <omgdc:Bounds height="60.0" width="100.0" x="800.0" y="290.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="theEnd" id="BPMNShape_theEnd">
-        <omgdc:Bounds height="35.0" width="35.0" x="960.0" y="212.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="shouldSkip" id="BPMNShape_shouldSkip">
-        <omgdc:Bounds height="40.0" width="40.0" x="230.0" y="292.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape bpmnElement="needSettleDecision" id="BPMNShape_needSettleDecision">
-        <omgdc:Bounds height="40.0" width="40.0" x="710.0" y="375.0"></omgdc:Bounds>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge bpmnElement="toCover" id="BPMNEdge_toCover">
-        <omgdi:waypoint x="35.0" y="166.0"></omgdi:waypoint>
-        <omgdi:waypoint x="82.0" y="167.0"></omgdi:waypoint>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="toManagerDecision" id="BPMNEdge_toManagerDecision">
-        <omgdi:waypoint x="182.0" y="167.0"></omgdi:waypoint>
-        <omgdi:waypoint x="230.0" y="166.0"></omgdi:waypoint>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="managerApproved" id="BPMNEdge_managerApproved">
-        <omgdi:waypoint x="250.0" y="186.0"></omgdi:waypoint>
-        <omgdi:waypoint x="250.0" y="202.0"></omgdi:waypoint>
-        <omgdi:waypoint x="250.0" y="230.0"></omgdi:waypoint>
-        <omgdi:waypoint x="250.0" y="292.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="22.0" x="249.0" y="204.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="managerRejected" id="BPMNEdge_managerRejected">
-        <omgdi:waypoint x="250.0" y="146.0"></omgdi:waypoint>
-        <omgdi:waypoint x="250.0" y="116.0"></omgdi:waypoint>
-        <omgdi:waypoint x="282.0" y="116.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="116.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="212.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="22.0" x="260.0" y="123.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="toAuditDecision" id="BPMNEdge_toAuditDecision">
-        <omgdi:waypoint x="420.0" y="230.0"></omgdi:waypoint>
-        <omgdi:waypoint x="432.0" y="230.0"></omgdi:waypoint>
-        <omgdi:waypoint x="460.0" y="229.0"></omgdi:waypoint>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="auditApproved" id="BPMNEdge_auditApproved">
-        <omgdi:waypoint x="480.0" y="249.0"></omgdi:waypoint>
-        <omgdi:waypoint x="480.0" y="291.0"></omgdi:waypoint>
-        <omgdi:waypoint x="561.0" y="291.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="22.0" x="480.0" y="259.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="auditRejected" id="BPMNEdge_auditRejected">
-        <omgdi:waypoint x="480.0" y="209.0"></omgdi:waypoint>
-        <omgdi:waypoint x="480.0" y="148.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="148.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="212.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="22.0" x="480.0" y="170.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="toAfterAuditDecision" id="BPMNEdge_toAfterAuditDecision">
-        <omgdi:waypoint x="661.0" y="291.0"></omgdi:waypoint>
-        <omgdi:waypoint x="672.0" y="290.0"></omgdi:waypoint>
-        <omgdi:waypoint x="672.0" y="290.0"></omgdi:waypoint>
-        <omgdi:waypoint x="710.0" y="290.0"></omgdi:waypoint>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="afterAuditApproved" id="BPMNEdge_afterAuditApproved">
-        <omgdi:waypoint x="730.0" y="310.0"></omgdi:waypoint>
-        <omgdi:waypoint x="730.0" y="342.0"></omgdi:waypoint>
-        <omgdi:waypoint x="730.0" y="375.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="100.0" x="729.0" y="325.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="afterAuditRejected" id="BPMNEdge_afterAuditRejected">
-        <omgdi:waypoint x="730.0" y="270.0"></omgdi:waypoint>
-        <omgdi:waypoint x="730.0" y="229.0"></omgdi:waypoint>
-        <omgdi:waypoint x="960.0" y="229.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="22.0" x="750.0" y="213.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="toEnd" id="BPMNEdge_toEnd">
-        <omgdi:waypoint x="900.0" y="320.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="319.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="247.0"></omgdi:waypoint>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="hasLoan" id="BPMNEdge_hasLoan">
-        <omgdi:waypoint x="270.0" y="312.0"></omgdi:waypoint>
-        <omgdi:waypoint x="369.0" y="311.0"></omgdi:waypoint>
-        <omgdi:waypoint x="370.0" y="260.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="33.0" x="270.0" y="312.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="noLoanToAfterAudit" id="BPMNEdge_noLoanToAfterAudit">
-        <omgdi:waypoint x="250.0" y="332.0"></omgdi:waypoint>
-        <omgdi:waypoint x="250.0" y="357.0"></omgdi:waypoint>
-        <omgdi:waypoint x="611.0" y="357.0"></omgdi:waypoint>
-        <omgdi:waypoint x="611.0" y="341.0"></omgdi:waypoint>
-        <omgdi:waypoint x="611.0" y="321.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="33.0" x="260.0" y="359.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="noLoadToEnd" id="BPMNEdge_noLoadToEnd">
-        <omgdi:waypoint x="730.0" y="415.0"></omgdi:waypoint>
-        <omgdi:waypoint x="732.0" y="439.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="439.0"></omgdi:waypoint>
-        <omgdi:waypoint x="977.0" y="247.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="33.0" x="730.0" y="415.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge bpmnElement="hasLoanToSettle" id="BPMNEdge_hasLoanToSettle">
-        <omgdi:waypoint x="750.0" y="395.0"></omgdi:waypoint>
-        <omgdi:waypoint x="851.0" y="394.0"></omgdi:waypoint>
-        <omgdi:waypoint x="851.0" y="373.0"></omgdi:waypoint>
-        <omgdi:waypoint x="850.0" y="350.0"></omgdi:waypoint>
-        <bpmndi:BPMNLabel>
-          <omgdc:Bounds height="16.0" width="33.0" x="750.0" y="395.0"></omgdc:Bounds>
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNEdge>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:activiti="http://activiti.org/bpmn"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:tns="http://activiti.org/bpmn20" typeLanguage="http://www.w3.org/2001/XMLSchema"
+             expressionLanguage="http://www.w3.org/1999/XPath" targetNamespace="http://activiti.org/bpmn20"
+             id="definitions" name="">
+    <process id="pre_consume_general" name="Pre Consume Approval Process" isExecutable="true" isClosed="false"
+             processType="None">
+        <startEvent id="start" activiti:initiator="submitUserCode">
+            <extensionElements>
+                <activiti:executionListener event="start"
+                                            expression="${execution.setVariable('_ACTIVITI_SKIP_EXPRESSION_ENABLED', true)}"></activiti:executionListener>
+                <activiti:executionListener event="start"
+                                            expression="${execution.setVariable('formTypeId', 'PRECONSUME')}"></activiti:executionListener>
+            </extensionElements>
+        </startEvent>
+        <sequenceFlow id="toCover" sourceRef="start" targetRef="managerApproval"></sequenceFlow>
+        <userTask id="managerApproval" name="领导审批"
+                  activiti:candidateUsers="${processService.getNextApproverUserCodes(entCode, departmentCode, requestUserCode, currentApprover, preConsumeAmount, false, preConsumeDataCode, formTypeId, null)}"
+                  activiti:category="APPROVAL"
+                  activiti:skipExpression="${!processService.hasNextNonRedundantApprovers(entCode, departmentCode, requestUserCode, currentApprover, preConsumeAmount, false, preConsumeDataCode, formTypeId, null, execution, false)}">
+            <extensionElements>
+                <activiti:taskListener event="create"
+                                       expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'APPROVING')}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'APPROVAL_START', task, null)}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordFormTask(task, entCode, formTypeId, preConsumeDataCode, null, 'MANAGER', 'managerApproval', true, 48)}"></activiti:taskListener>
+            </extensionElements>
+            <multiInstanceLoopCharacteristics isSequential="true">
+                <loopCardinality>50</loopCardinality>
+                <completionCondition>
+                    ${!processService.hasNextApprovers(entCode, departmentCode, requestUserCode, currentApprover, preConsumeAmount, false, preConsumeDataCode, formTypeId, null) }
+                </completionCondition>
+            </multiInstanceLoopCharacteristics>
+        </userTask>
+        <userTask id="financeAudit" name="财务审核"
+                  activiti:candidateGroups="${processService.findSubAuditGroup(entCode, preConsumeDataCode, auditLevel, null, formTypeId)}"
+                  activiti:skipExpression="${!processService.hasSubAuditGroup(entCode, preConsumeDataCode, auditLevel, null, formTypeId)}"
+                  activiti:category="FINANCE_AUDIT">
+            <extensionElements>
+                <activiti:taskListener event="create"
+                                       expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'AUDITING')}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'AUDIT_START', task, null)}"></activiti:taskListener>
+                <activiti:taskListener event="complete"
+                                       expression="${execution.setVariable('auditLevel', execution.getVariable('auditLevel') + 1)}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordFormTask(task, entCode, formTypeId, preConsumeDataCode, null, 'FINANCE_AUDIT', 'financeAudit', false, 48)}"></activiti:taskListener>
+            </extensionElements>
+            <multiInstanceLoopCharacteristics isSequential="true">
+                <loopCardinality>999</loopCardinality>
+                <completionCondition>
+                    ${!audited || !processService.hasAuditLevel(entCode, auditLevel, formTypeId, preConsumeDataCode)}
+                </completionCondition>
+            </multiInstanceLoopCharacteristics>
+        </userTask>
+        <userTask id="afterAuditApproval" name="财务后审批"
+                  activiti:candidateUsers="${processService.getNextApproverUserCodes(entCode, departmentCode, requestUserCode, currentApprover, preConsumeAmount, true, preConsumeDataCode, formTypeId, null)}"
+                  activiti:category="APPROVAL"
+                  activiti:skipExpression="${!processService.hasNextNonRedundantApprovers(entCode, departmentCode, requestUserCode, currentApprover, preConsumeAmount, true, preConsumeDataCode, formTypeId, null, execution, false)}">
+            <extensionElements>
+                <activiti:taskListener event="create"
+                                       expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'APPROVING')}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'APPROVAL_START', task, null)}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordFormTask(task, entCode, formTypeId, preConsumeDataCode, null, 'MANAGER', 'afterAuditApproval', true, 48)}"></activiti:taskListener>
+            </extensionElements>
+            <multiInstanceLoopCharacteristics isSequential="true">
+                <loopCardinality>50</loopCardinality>
+                <completionCondition>
+                    ${!processService.hasNextApprovers(entCode, departmentCode, requestUserCode, currentApprover, preConsumeAmount, true, preConsumeDataCode, formTypeId, null)}
+                </completionCondition>
+            </multiInstanceLoopCharacteristics>
+        </userTask>
+        <userTask id="cashierSettle" name="出纳结算" activiti:candidateGroups="CASHIER" activiti:category="CASHIER_SETTLE">
+            <extensionElements>
+                <activiti:taskListener event="create"
+                                       expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'SETTLEMENT')}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordProcessLog(entCode, formTypeId, preConsumeDataCode, 'SETTLE_START', task, null)}"></activiti:taskListener>
+                <activiti:taskListener event="create"
+                                       expression="${processService.recordFormTask(task, entCode, formTypeId, preConsumeDataCode, null, 'TELLER', 'cashierSettle', false, 48)}"></activiti:taskListener>
+            </extensionElements>
+        </userTask>
+        <sequenceFlow id="toEnd" sourceRef="cashierSettle" targetRef="theEnd"></sequenceFlow>
+        <endEvent id="theEnd">
+            <extensionElements>
+                <activiti:executionListener event="end"
+                                            expression="${processService.updateStatus(entCode, formTypeId, preConsumeDataCode, 'COMPLETED')}"></activiti:executionListener>
+                <activiti:executionListener event="end"
+                                            expression="${processService.recordCompletedDate(entCode, formTypeId, preConsumeDataCode)}"></activiti:executionListener>
+            </extensionElements>
+        </endEvent>
+        <exclusiveGateway id="shouldSkip" name="Exclusive Gateway"></exclusiveGateway>
+        <sequenceFlow id="hasLoan" name="有借款" sourceRef="shouldSkip" targetRef="financeAudit">
+            <extensionElements>
+                <activiti:executionListener event="take"
+                                            expression="${execution.setVariable('auditLevel', 1)}"></activiti:executionListener>
+            </extensionElements>
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount > 0}]]></conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="noLoanToAfterAudit" name="无借款" sourceRef="shouldSkip" targetRef="afterAuditApproval">
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount==0}]]></conditionExpression>
+        </sequenceFlow>
+        <exclusiveGateway id="needSettleDecision" name="Exclusive Gateway"></exclusiveGateway>
+        <sequenceFlow id="noLoanToEnd" name="无借款" sourceRef="needSettleDecision" targetRef="theEnd">
+            <extensionElements>
+                <activiti:executionListener event="take"
+                                            expression="${processService.recordApprovedDate(entCode, formTypeId, preConsumeDataCode)}"></activiti:executionListener>
+            </extensionElements>
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount==0}]]></conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="hasLoanToSettle" name="有借款" sourceRef="needSettleDecision" targetRef="cashierSettle">
+            <extensionElements>
+                <activiti:executionListener event="take"
+                                            expression="${processService.recordApprovedDate(entCode, formTypeId, preConsumeDataCode)}"></activiti:executionListener>
+            </extensionElements>
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${loanAmount > 0}]]></conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flow1" sourceRef="managerApproval" targetRef="shouldSkip"></sequenceFlow>
+        <sequenceFlow id="flow2" sourceRef="financeAudit" targetRef="afterAuditApproval"></sequenceFlow>
+        <sequenceFlow id="flow3" sourceRef="afterAuditApproval" targetRef="needSettleDecision"></sequenceFlow>
+    </process>
+    <bpmndi:BPMNDiagram id="BPMNDiagram_pre_consume_general">
+        <bpmndi:BPMNPlane bpmnElement="pre_consume_general" id="BPMNPlane_pre_consume_general">
+            <bpmndi:BPMNShape bpmnElement="start" id="BPMNShape_start">
+                <omgdc:Bounds height="35.0" width="35.0" x="1.0" y="295.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="managerApproval" id="BPMNShape_managerApproval">
+                <omgdc:Bounds height="60.0" width="100.0" x="84.0" y="283.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="financeAudit" id="BPMNShape_financeAudit">
+                <omgdc:Bounds height="60.0" width="100.0" x="324.0" y="200.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="afterAuditApproval" id="BPMNShape_afterAuditApproval">
+                <omgdc:Bounds height="60.0" width="100.0" x="565.0" y="261.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="cashierSettle" id="BPMNShape_cashierSettle">
+                <omgdc:Bounds height="60.0" width="100.0" x="805.0" y="261.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="theEnd" id="BPMNShape_theEnd">
+                <omgdc:Bounds height="35.0" width="35.0" x="964.0" y="212.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="shouldSkip" id="BPMNShape_shouldSkip">
+                <omgdc:Bounds height="40.0" width="40.0" x="234.0" y="292.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="needSettleDecision" id="BPMNShape_needSettleDecision">
+                <omgdc:Bounds height="40.0" width="40.0" x="714.0" y="375.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNEdge bpmnElement="toCover" id="BPMNEdge_toCover">
+                <omgdi:waypoint x="36.0" y="312.0"></omgdi:waypoint>
+                <omgdi:waypoint x="84.0" y="313.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="toEnd" id="BPMNEdge_toEnd">
+                <omgdi:waypoint x="905.0" y="291.0"></omgdi:waypoint>
+                <omgdi:waypoint x="981.0" y="291.0"></omgdi:waypoint>
+                <omgdi:waypoint x="981.0" y="247.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="hasLoan" id="BPMNEdge_hasLoan">
+                <omgdi:waypoint x="274.0" y="312.0"></omgdi:waypoint>
+                <omgdi:waypoint x="373.0" y="311.0"></omgdi:waypoint>
+                <omgdi:waypoint x="374.0" y="260.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="14.0" width="100.0" x="274.0" y="312.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="noLoanToAfterAudit" id="BPMNEdge_noLoanToAfterAudit">
+                <omgdi:waypoint x="254.0" y="332.0"></omgdi:waypoint>
+                <omgdi:waypoint x="254.0" y="357.0"></omgdi:waypoint>
+                <omgdi:waypoint x="615.0" y="357.0"></omgdi:waypoint>
+                <omgdi:waypoint x="615.0" y="341.0"></omgdi:waypoint>
+                <omgdi:waypoint x="615.0" y="321.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="14.0" width="33.0" x="264.0" y="359.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="noLoanToEnd" id="BPMNEdge_noLoanToEnd">
+                <omgdi:waypoint x="734.0" y="415.0"></omgdi:waypoint>
+                <omgdi:waypoint x="736.0" y="439.0"></omgdi:waypoint>
+                <omgdi:waypoint x="981.0" y="439.0"></omgdi:waypoint>
+                <omgdi:waypoint x="981.0" y="247.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="14.0" width="33.0" x="734.0" y="415.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="hasLoanToSettle" id="BPMNEdge_hasLoanToSettle">
+                <omgdi:waypoint x="754.0" y="395.0"></omgdi:waypoint>
+                <omgdi:waypoint x="855.0" y="394.0"></omgdi:waypoint>
+                <omgdi:waypoint x="855.0" y="373.0"></omgdi:waypoint>
+                <omgdi:waypoint x="855.0" y="321.0"></omgdi:waypoint>
+                <bpmndi:BPMNLabel>
+                    <omgdc:Bounds height="14.0" width="33.0" x="754.0" y="395.0"></omgdc:Bounds>
+                </bpmndi:BPMNLabel>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow1" id="BPMNEdge_flow1">
+                <omgdi:waypoint x="184.0" y="313.0"></omgdi:waypoint>
+                <omgdi:waypoint x="234.0" y="312.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow2" id="BPMNEdge_flow2">
+                <omgdi:waypoint x="424.0" y="230.0"></omgdi:waypoint>
+                <omgdi:waypoint x="560.0" y="230.0"></omgdi:waypoint>
+                <omgdi:waypoint x="615.0" y="261.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow3" id="BPMNEdge_flow3">
+                <omgdi:waypoint x="665.0" y="291.0"></omgdi:waypoint>
+                <omgdi:waypoint x="734.0" y="291.0"></omgdi:waypoint>
+                <omgdi:waypoint x="734.0" y="375.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+        </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
 </definitions>
